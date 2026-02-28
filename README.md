@@ -33,9 +33,9 @@ The Payment Gateway handles synchronous HTTP requests and processes payments via
                      |  (DLQ Enabled)   |
                      +--------+---------+
                               |
-          ----------------------------------------------
-          |                |                |          |
-          v                v                v          v
+          ------------------------------------------------------
+          |                |                |                  |
+          v                v                v                  v
 +----------------+ +----------------+ +----------------+ +--------------+
 | LEDGER SERVICE | | FRAUD SERVICE  | | NOTIFICATION   | |   DLQ / Ops  |
 |     (8081)     | |     (8082)     | |    (8083)      | |  (Failures)  |
