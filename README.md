@@ -1,39 +1,160 @@
-💸 PayPipe: Distributed FinTech Payment EcosystemA fault-tolerant, event-driven microservices architecture simulating a high-throughput enterprise payment gateway.This project demonstrates advanced distributed system design patterns, including the Saga Pattern, Event Sourcing, API Idempotency, and Asynchronous Message Brokering to handle complex financial transactions with strict data integrity.📑 Table of ContentsSystem ArchitectureCore Features & Engineering HighlightsTech StackGetting StartedTesting the EcosystemProject Roadmap🧠 System ArchitecturePayPipe utilizes an event-driven choreography approach. The Payment Gateway handles synchronous user requests and interacts with third-party processors (Stripe), while downstream services react to events asynchronously via Apache Kafka.[ Client / Postman ] 
-       │ (HTTP POST with Idempotency-Key)
-       ▼
-┌──────────────────────────────────────────────┐
-│             PAYMENT GATEWAY (Port 8080)      │
-│  1. Check Redis Lock (O(1) Idempotency)      │
-│  2. Call Stripe API (Process Payment)        │
-│  3. Publish Event to Kafka                   │
-└──────────────────────┬───────────────────────┘
-                       │ (PAYMENT_SUCCESS_EVENT)
-                       ▼
-             [ APACHE KAFKA ] ──(Dead Letter Queues configured)──┐
-                       │                                         │
-       ┌───────────────┼───────────────┐                         │
-       ▼               ▼               ▼                         ▼
-┌────────────┐  ┌─────────────┐  ┌──────────────┐         ┌─────────────┐
-│   LEDGER   │  │    FRAUD    │  │ NOTIFICATION │         │  DLQ / Ops  │
-│  SERVICE   │  │   SERVICE   │  │   SERVICE    │         │ (Failures)  │
-│(Port 8081) │  │ (Port 8082) │  │ (Port 8083)  │         └─────────────┘
-└──────┬─────┘  └──────┬──────┘  └──────┬───────┘
-       ▼               ▼                ▼
- [PostgreSQL]      [PostgreSQL]    [Mock SMTP/Log]
- (Append-Only)     (Rules Engine)
-✨ Core Features & Engineering HighlightsStrict API Idempotency: Implemented Redis distributed locks to prevent double-charging users during concurrent UI clicks or network retries, guaranteeing O(1) time complexity checks.Event-Sourced Ledger: Designed an append-only financial ledger in PostgreSQL. Strict ACID compliance ensures 0% data loss, and dynamic state aggregation allows for real-time balance calculations without UPDATE or DELETE anomalies.Fault Tolerance & Eventual Consistency: Downstream microservices are decoupled using Apache Kafka. If the Ledger or Fraud service experiences an outage, messages are safely retained in Kafka and processed when the node recovers.Saga Pattern Choreography: Manages distributed transactions across multiple microservices without a centralized database, ensuring high availability and system resilience.🛠️ Tech StackCategoryTechnologyLanguages & FrameworksJava 17, Spring Boot 3 (Web, Data JPA, Kafka)Message BrokerApache Kafka (with Zookeeper)Databases/CachesPostgreSQL (Relational), Redis (In-Memory)Third-Party APIsStripe Java SDKInfrastructureDocker & Docker Compose🚦 Getting StartedPrerequisitesJava 17+ and Maven installed.Docker Desktop installed and running.A free Stripe Developer Account (for test API keys).1. Start the Infrastructure (Kafka, Zookeeper, Redis, Postgres)Run the provided Docker Compose file to spin up the required databases and message broker:docker-compose up -d
-2. Configure API KeysUpdate the application.properties in the payment-gateway service with your Stripe Test Key:stripe.secret.key=sk_test_YOUR_KEY_HERE
-3. Start the MicroservicesStart each Spring Boot service in its respective directory:# Terminal 1: Start Payment Gateway
+# PayPipe – Distributed FinTech Payment Ecosystem
+
+PayPipe is a fault-tolerant, event-driven microservices architecture that simulates a high-throughput enterprise payment gateway.
+
+It demonstrates advanced distributed systems patterns including Saga choreography, event sourcing, strict API idempotency, and asynchronous message brokering.
+
+---
+
+## Architecture Overview
+
+PayPipe follows an event-driven choreography model.
+
+The Payment Gateway handles synchronous HTTP requests and processes payments via Stripe. After successful processing, it publishes events to Kafka. Downstream services (Ledger, Fraud, Notification) consume these events asynchronously.
+
+
+```
+[ Client / Postman ]
+        |
+        |  HTTP POST (Idempotency-Key)
+        v
++--------------------------------------------------+
+|              PAYMENT GATEWAY (8080)              |
+|--------------------------------------------------|
+| 1. Check Redis Lock (O(1) Idempotency)           |
+| 2. Call Stripe API (Process Payment)             |
+| 3. Publish Event to Kafka                        |
++---------------------------+----------------------+
+                            |
+                            | PAYMENT_SUCCESS_EVENT
+                            v
+                     +------------------+
+                     |   APACHE KAFKA   |
+                     |  (DLQ Enabled)   |
+                     +--------+---------+
+                              |
+          ----------------------------------------------
+          |                |                |          |
+          v                v                v          v
++----------------+ +----------------+ +----------------+ +--------------+
+| LEDGER SERVICE | | FRAUD SERVICE  | | NOTIFICATION   | |   DLQ / Ops  |
+|     (8081)     | |     (8082)     | |    (8083)      | |  (Failures)  |
++--------+-------+ +--------+-------+ +--------+-------+ +--------------+
+         |                  |                  |
+         v                  v                  v
+   PostgreSQL         PostgreSQL           Mock SMTP
+   (Append-Only)      (Rules Engine)       / Logs
+```
+
+Key components:
+
+* Redis for idempotency
+* Apache Kafka for event streaming
+* PostgreSQL for append-only ledger storage
+* Stripe API for payment processing
+* Docker for infrastructure orchestration
+
+---
+
+## Core Features
+
+Strict API Idempotency
+Redis-based distributed locking prevents duplicate charges during retries or concurrent requests.
+
+Event-Sourced Ledger
+Append-only PostgreSQL ledger ensures ACID compliance and accurate balance aggregation without data mutation.
+
+Fault Tolerance
+Kafka retains events if downstream services are unavailable. Processing resumes automatically after recovery.
+
+Saga Pattern (Choreography)
+Distributed transaction management without a central coordinator.
+
+---
+
+## Tech Stack
+
+* Java 17
+* Spring Boot 3 (Web, JPA, Kafka)
+* Apache Kafka
+* PostgreSQL
+* Redis
+* Stripe Java SDK
+* Docker & Docker Compose
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+* Java 17+
+* Maven
+* Docker
+* Stripe test API key
+
+### 1. Start Infrastructure
+
+```bash
+docker-compose up -d
+```
+
+### 2. Configure Stripe
+
+Update `application.properties` in the payment-gateway service:
+
+```properties
+stripe.secret.key=sk_test_YOUR_KEY_HERE
+```
+
+### 3. Start Services
+
+In separate terminals:
+
+```bash
 cd payment-gateway
 ./mvnw spring-boot:run
+```
 
-# Terminal 2: Start Ledger Service
+```bash
 cd ledger-service
 ./mvnw spring-boot:run
-🧪 Testing the EcosystemUse Postman or cURL to simulate a transaction.1. Initiate a Payment (Hits Gateway)Try sending this exact request twice to witness the Redis Idempotency Bouncer block the duplicate in <10ms!curl -X POST http://localhost:8080/api/payments/charge \
+```
+
+---
+
+## Testing
+
+### Create a Payment
+
+Send the same request twice to test idempotency:
+
+```bash
+curl -X POST http://localhost:8080/api/payments/charge \
      -H "Content-Type: application/json" \
      -H "Idempotency-Key: unique-click-001" \
      -d '{"userId": "bruce_wayne", "amount": 5000.00, "currency": "USD"}'
-2. Verify the Ledger Balance (Hits Ledger)curl -X GET http://localhost:8081/api/ledger/balance/bruce_wayne
-Expected Output:5000.0
-📈 Project Roadmap[x] Integrate Stripe API for payment processing[x] Implement Redis Idempotency layer[x] Build Append-Only PostgreSQL Ledger[ ] Migrate Synchronous HTTP calls to Apache Kafka (Event-Driven)[ ] Build standalone Fraud Detection Service[ ] Build standalone Notification Service[ ] Implement a Dead Letter Queue (DLQ) retry worker[ ] Integrate Prometheus & Grafana for JVM metrics
+```
+
+### Verify Balance
+
+```bash
+curl -X GET http://localhost:8081/api/ledger/balance/bruce_wayne
+```
+
+Expected output:
+
+```
+5000.0
+```
+
+---
+
+## Roadmap
+
+* Migrate internal synchronous calls fully to Kafka
+* Complete Fraud and Notification services
+* Implement DLQ retry worker
+* Add metrics (Prometheus, Grafana)
+* Add CI/CD pipeline
+
