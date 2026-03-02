@@ -1,16 +1,15 @@
 package com.paypipe.payment_gateway.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stripe.Stripe;
-import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
 import com.stripe.param.PaymentIntentCreateParams;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.http.ResponseEntity;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -22,7 +21,7 @@ public class PaymentService {
     private StringRedisTemplate redisTemplate;
 
     @Autowired
-    private RestTemplate restTemplate; // Added this to make HTTP calls to Ledger
+    private KafkaTemplate<String, String> kafkaTemplate;
 
     @Value("${stripe.secret.key}")//fetching the key
     private String stripeSecretKey;
@@ -58,9 +57,8 @@ public class PaymentService {
             PaymentIntent paymentIntent = PaymentIntent.create(params);
             String stripeId = paymentIntent.getId(); // Get the ID to send to Ledger
 
-            // --- NEW: Send data to the Ledger Service ---
-            System.out.println("Stripe Success! Sending data to Ledger Vault...");
-            String ledgerUrl = "http://localhost:8081/api/ledger/record";
+            // KAFKA LOGIC
+            System.out.println("Stripe Success! Publishing Event to Kafka...");
 
             Map<String, Object> ledgerPayload = new HashMap<>();
             ledgerPayload.put("transactionId", stripeId);
@@ -68,21 +66,20 @@ public class PaymentService {
             ledgerPayload.put("amount", amount);
             ledgerPayload.put("type", "CREDIT");
 
-            // Make POST request to Port 8081
-            ResponseEntity<String> ledgerResponse = restTemplate.postForEntity(ledgerUrl, ledgerPayload, String.class);
+            // Convert the Java Map into a JSON String for Kafka
+            ObjectMapper mapper = new ObjectMapper();
+            String jsonMessage = mapper.writeValueAsString(ledgerPayload);
 
-            if (!ledgerResponse.getStatusCode().is2xxSuccessful()) {
-                throw new RuntimeException("Ledger Service failed to save data!");
-            }
-            // --------------------------------------------
+            // Publish message to Kafka Topic (NO DIRECT HTTP CALL TO LEDGER!)
+            kafkaTemplate.send("payment-success-topic", jsonMessage);
 
             //update redis for success
             redisTemplate.opsForValue().set(redisKey,"COMPLETED_INTENT_"+ paymentIntent.getId(),24,TimeUnit.SECONDS);
 
-            return "SUCCESS!! Stripe Payment Intent Created & Saved in Ledger. ID: " + paymentIntent.getId();
+            return "SUCCESS!! Stripe Payment Intent Created & Sent to Kafka. ID: " + paymentIntent.getId();
 
         }
-        catch (Exception e){ // Changed to generic Exception so it catches Stripe AND Ledger errors
+        catch (Exception e){
             //if stripe fails delete the redis lock
             //user can try clicking the button again.
             redisTemplate.delete(redisKey);
