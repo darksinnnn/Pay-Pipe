@@ -92,6 +92,7 @@ Distributed transaction management without a central coordinator.
 * Maven
 * Docker
 * Stripe test API key
+* IDE
 
 ### 1. Start Infrastructure
 
